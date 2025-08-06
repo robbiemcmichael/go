@@ -38,9 +38,13 @@ var (
 	simplifyAST = flag.Bool("s", false, "simplify code")
 	doDiff      = flag.Bool("d", false, "display diffs instead of rewriting files")
 	allErrors   = flag.Bool("e", false, "report all errors (not just the first 10 on different lines)")
+	setExitCode = flag.Bool("x", false, "set exit code to 1 when the formatting differs from gofmt's")
 
 	// debugging
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
+
+	// errors
+	errFormattingDiffers = fmt.Errorf("formatting differs from gofmt's")
 )
 
 // Keep these in sync with go/format/format.go.
@@ -220,8 +224,12 @@ func (r *reporter) Report(err error) {
 		panic("Report with nil error")
 	}
 	st := r.getState()
-	scanner.PrintError(st.err, err)
-	st.exitCode = 2
+	if err == errFormattingDiffers {
+		st.exitCode = 1
+	} else {
+		scanner.PrintError(st.err, err)
+		st.exitCode = 2
+	}
 }
 
 func (r *reporter) ExitCode() int {
@@ -287,10 +295,16 @@ func processFile(filename string, info fs.FileInfo, in io.Reader, r *reporter) e
 	}
 
 	if !*list && !*write && !*doDiff {
-		_, err = r.Write(res)
+		if _, err = r.Write(res); err != nil {
+			return err
+		}
 	}
 
-	return err
+	if *setExitCode && !bytes.Equal(src, res) {
+		return errFormattingDiffers
+	}
+
+	return nil
 }
 
 // readFile reads the contents of filename, described by info.

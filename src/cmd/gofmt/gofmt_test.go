@@ -17,6 +17,16 @@ import (
 
 var update = flag.Bool("update", false, "update .golden files")
 
+func resetFlags() {
+	*list = false
+	*write = false
+	*rewriteRule = ""
+	*simplifyAST = false
+	*doDiff = false
+	*allErrors = false
+	*setExitCode = false
+}
+
 // gofmtFlags looks for a comment of the form
 //
 //	//gofmt flags
@@ -54,9 +64,8 @@ func gofmtFlags(filename string, maxLines int) string {
 }
 
 func runTest(t *testing.T, in, out string) {
-	// process flags
-	*simplifyAST = false
-	*rewriteRule = ""
+	resetFlags()
+
 	info, err := os.Lstat(in)
 	if err != nil {
 		t.Error(err)
@@ -156,6 +165,35 @@ func TestRewrite(t *testing.T) {
 				runTest(t, out, out)
 			}
 		})
+	}
+}
+
+// TestSetExitCode verifies that -x flag will result in the exit code being set
+// to 1 when the formatting differs from gofmt's.
+func TestSetExitCode(t *testing.T) {
+	const in = "testdata/import.input"
+
+	resetFlags()
+	*setExitCode = true
+
+	initParserMode()
+	initRewrite()
+
+	info, err := os.Lstat(in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	const maxWeight = 2 << 20
+	var buf, errBuf bytes.Buffer
+	s := newSequencer(maxWeight, &buf, &errBuf)
+	s.Add(fileWeight(in, info), func(r *reporter) error {
+		return processFile(in, info, nil, r)
+	})
+
+	if s.GetExitCode() != 1 {
+		t.Errorf("exit code is %d, expected 1", s.GetExitCode())
 	}
 }
 
